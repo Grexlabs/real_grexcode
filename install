@@ -143,21 +143,21 @@ else
 fi
 
 # Create wrapper script with --contact support
-cat > "$INSTALL_DIR/$APP" << 'WRAPPER'
+cat > "$INSTALL_DIR/$APP" << WRAPPER
 #!/usr/bin/env bash
-if [ "$1" = "--contact" ] || [ "$1" = "-c" ]; then
+if [ "\$1" = "--contact" ] || [ "\$1" = "-c" ]; then
     echo ""
     echo -e "\033[1;32m  Join Grexcode Community:\033[0m"
     echo -e "\033[36m  https://t.me/Developer_mk_group\033[0m"
     echo ""
     exit 0
 fi
-exec "$(dirname "$0")/$APP.bin" "$@"
+exec "\$(dirname "\$0")/$APP.bin" "\$@"
 WRAPPER
 chmod 755 "$INSTALL_DIR/$APP"
 
-# Create all aliases
-for alias_name in grex Grex GREX gc GC Gc grexcode Grexcode GREXCODE; do
+# Create all aliases (skip grexcode - that's the wrapper itself)
+for alias_name in grex Grex GREX gc GC Gc Grexcode GREXCODE; do
     ln -sf "$INSTALL_DIR/$APP" "$INSTALL_DIR/$alias_name"
 done
 
