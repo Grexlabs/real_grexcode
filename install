@@ -1,25 +1,50 @@
 #!/usr/bin/env bash
 set -euo pipefail
 APP=grexcode
+VERSION="1.2.1"
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 REPO="grexlabs/real_grexcode"
+REPO_URL="https://github.com/$REPO"
+
+banner() {
+    echo -e ""
+    echo -e "${MUTED}                    ${NC}             ${CYAN}▄${NC}     "
+    echo -e "${MUTED}█▀▀█ █▀▀█ █▀▀▀ █░█░█ ${NC}${CYAN}█▀▀▀ █▀▀█ █▀▀▄ █▀▀ ${NC}"
+    echo -e "${MUTED}█░▄▄ █▄▄▀ █▀▀░ ▀▄▀▄▀ ${NC}${CYAN}█░░░ █░░█ █░█░ █▀▀ ${NC}"
+    echo -e "${MUTED}▀▀▀▀ ▀░▀▀ ▀▀▀▀ ░▀░▀░ ${NC}${CYAN}▀▀▀▀ ▀▀▀▀ ▀▀▀░ ▀▀▀ ${NC}"
+    echo -e ""
+}
 
 usage() {
+    banner
     cat <<EOF
-Grexcode Installer
+${CYAN}Grexcode${NC} v${VERSION} - The open source coding agent
 
-Usage: install.sh [options]
+${GREEN}Usage:${NC}
+    install.sh [options]
 
-Options:
+${GREEN}Options:${NC}
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version
+    -v, --version <ver>     Install a specific version
     -b, --binary <path>     Install from a local binary
         --no-modify-path    Don't modify shell config files
+
+${GREEN}Supported platforms:${NC}
+    linux-x64, linux-arm64, linux-armv7
+    darwin-x64, darwin-arm64
+    windows-x64
+
+${GREEN}Quick install:${NC}
+    curl -fsSL https://raw.githubusercontent.com/$REPO/main/install | bash
+
+${GREEN}Docs:${NC} https://grexcode.ai/docs
+${GREEN}Source:${NC} $REPO_URL
 EOF
 }
 
@@ -41,7 +66,7 @@ INSTALL_DIR="${GREXCODE_INSTALL_DIR:-$HOME/.grexcode/bin}"
 mkdir -p "$INSTALL_DIR"
 
 if [ -n "$binary_path" ]; then
-    [ -f "$binary_path" ] || { echo -e "${RED}Binary not found: ${binary_path}${NC}"; exit 1; }
+    [ -f "$binary_path" ] || { echo -e "${RED}Error: Binary not found: ${binary_path}${NC}"; exit 1; }
     cp "$binary_path" "$INSTALL_DIR/$APP"
     chmod 755 "$INSTALL_DIR/$APP"
     specific_version="local"
@@ -51,14 +76,15 @@ else
         Darwin*) os="darwin" ;;
         Linux*) os="linux" ;;
         MINGW*|MSYS*|CYGWIN*) os="windows" ;;
-        *) echo -e "${RED}Unsupported OS: $raw_os${NC}"; exit 1 ;;
+        *) echo -e "${RED}Error: Unsupported OS: $raw_os${NC}"; exit 1 ;;
     esac
 
     arch=$(uname -m)
     case "$arch" in
         aarch64|arm64) arch="arm64" ;;
         x86_64|amd64) arch="x64" ;;
-        *) echo -e "${RED}Unsupported arch: $arch${NC}"; exit 1 ;;
+        armv7*|armhf) arch="armv7" ;;
+        *) echo -e "${RED}Error: Unsupported arch: $arch${NC}"; exit 1 ;;
     esac
 
     if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
@@ -68,28 +94,32 @@ else
 
     combo="$os-$arch"
     case "$combo" in
-        linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64) ;;
-        *) echo -e "${RED}No binary for $combo${NC}"; exit 1 ;;
+        linux-x64|linux-arm64|linux-armv7|darwin-x64|darwin-arm64|windows-x64) ;;
+        *) echo -e "${RED}Error: No prebuilt binary for $combo${NC}"; exit 1 ;;
     esac
 
     if [ -z "$requested_version" ]; then
         echo -e "${MUTED}Fetching latest version...${NC}"
         specific_version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
-        [ -n "$specific_version" ] || { echo -e "${RED}Could not fetch version${NC}"; exit 1; }
+        [ -n "$specific_version" ] || { echo -e "${RED}Error: Could not fetch latest version${NC}"; exit 1; }
     else
         specific_version="${requested_version#v}"
     fi
 
     url="https://github.com/$REPO/releases/download/v${specific_version}/${APP}-${combo}.tar.gz"
-    echo -e "${MUTED}Downloading ${APP}-${combo}.tar.gz (v${specific_version})...${NC}"
+    banner
+    echo -e "${MUTED}Installing ${CYAN}Grexcode${NC} ${MUTED}v${specific_version} for ${CYAN}${combo}${NC}...${NC}"
+    echo ""
 
     tmp_dir=$(mktemp -d)
     trap "rm -rf '$tmp_dir'" EXIT
 
-    if ! curl -fsSL -o "$tmp_dir/archive.tar.gz" "$url"; then
+    if ! curl -fsSL --progress-bar -o "$tmp_dir/archive.tar.gz" "$url"; then
         url="https://github.com/$REPO/releases/download/v${specific_version}/${APP}-${combo}.zip"
-        if ! curl -fsSL -o "$tmp_dir/archive.zip" "$url"; then
-            echo -e "${RED}Download failed${NC}"; exit 1
+        if ! curl -fsSL --progress-bar -o "$tmp_dir/archive.zip" "$url"; then
+            echo -e "${RED}Error: Download failed${NC}"
+            echo -e "${MUTED}Check: $REPO_URL/releases${NC}"
+            exit 1
         fi
         unzip -q "$tmp_dir/archive.zip" -d "$tmp_dir"
     else
@@ -100,32 +130,53 @@ else
     chmod 755 "$INSTALL_DIR/$APP"
 fi
 
-if [[ "$no_modify_path" != "true" ]] && [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+# Add to PATH and auto-source
+added_to_path=false
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     current_shell=$(basename "$SHELL" 2>/dev/null || echo "bash")
     case "$current_shell" in
         fish) cfg="$HOME/.config/fish/config.fish" ;;
         zsh)  cfg="${ZDOTDIR:-$HOME}/.zshrc" ;;
         *)    cfg="$HOME/.bashrc" ;;
     esac
+
     if [ -f "$cfg" ] && [[ -w "$cfg" ]]; then
-        grep -Fxq "export PATH=$INSTALL_DIR:\$PATH" "$cfg" 2>/dev/null || {
+        if ! grep -Fxq "export PATH=$INSTALL_DIR:\$PATH" "$cfg" 2>/dev/null; then
             echo -e "\n# grexcode" >> "$cfg"
             echo "export PATH=$INSTALL_DIR:\$PATH" >> "$cfg"
-            echo -e "${GREEN}Added grexcode to PATH in $cfg${NC}"
-        }
+            added_to_path=true
+        fi
     fi
 fi
 
-echo -e ""
-echo -e "${MUTED}                    ${NC}             ▄     "
-echo -e "${MUTED}█▀▀█ █▀▀█ █▀▀▀ █░█░█ ${NC}█▀▀▀ █▀▀█ █▀▀▄ █▀▀ "
-echo -e "${MUTED}█░▄▄ █▄▄▀ █▀▀░ ▀▄▀▄▀ ${NC}█░░░ █░░█ █░█░ █▀▀ "
-echo -e "${MUTED}▀▀▀▀ ▀░▀▀ ▀▀▀▀ ░▀░▀░ ${NC}▀▀▀▀ ▀▀▀▀ ▀▀▀░ ▀▀▀ "
-echo -e ""
-echo -e "${GREEN}Grexcode v${specific_version} installed!${NC}"
-echo -e ""
-echo -e "  cd <project>  ${MUTED}# Open directory${NC}"
-echo -e "  grexcode      ${MUTED}# Run Grexcode${NC}"
-echo -e ""
-echo -e "${MUTED}Docs: ${NC}https://grexcode.ai/docs"
-echo -e ""
+# Export PATH for current session
+export PATH="$INSTALL_DIR:$PATH"
+
+banner
+echo -e "${GREEN}Grexcode v${specific_version} installed successfully!${NC}"
+echo ""
+
+# Verify installation
+if command -v grexcode >/dev/null 2>&1; then
+    installed_version=$(grexcode --version 2>/dev/null || echo "$specific_version")
+    echo -e "${GREEN}✓${NC} grexcode is ready to use"
+    echo -e "${GREEN}✓${NC} Version: ${installed_version}"
+else
+    echo -e "${GREEN}✓${NC} Installed to: ${INSTALL_DIR}/grexcode"
+fi
+
+if [ "$added_to_path" = true ]; then
+    echo -e "${GREEN}✓${NC} Added to PATH in ${cfg}"
+    echo ""
+    echo -e "${MUTED}To use in this session, run:${NC}"
+    echo -e "  ${CYAN}source ${cfg}${NC}"
+fi
+
+echo ""
+echo -e "${CYAN}Quick start:${NC}"
+echo -e "  cd <project>    ${MUTED}# Open directory${NC}"
+echo -e "  grexcode        ${MUTED}# Start Grexcode${NC}"
+echo ""
+echo -e "${MUTED}Docs:${NC} https://grexcode.ai/docs"
+echo -e "${MUTED}Source:${NC} $REPO_URL"
+echo ""
