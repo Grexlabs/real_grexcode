@@ -4,7 +4,6 @@ APP=grexcode
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
-ORANGE='\033[38;5;214m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
@@ -18,14 +17,9 @@ Usage: install.sh [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version (e.g., 0.0.1)
+    -v, --version <version> Install a specific version
     -b, --binary <path>     Install from a local binary
         --no-modify-path    Don't modify shell config files
-
-Supported platforms:
-    linux-x64, linux-arm64, linux-armv7
-    darwin-x64, darwin-arm64
-    windows-x64
 EOF
 }
 
@@ -36,14 +30,10 @@ binary_path=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help) usage; exit 0 ;;
-        -v|--version)
-            [[ -n "${2:-}" ]] || { echo -e "${RED}Error: --version requires a version${NC}"; exit 1; }
-            requested_version="$2"; shift 2 ;;
-        -b|--binary)
-            [[ -n "${2:-}" ]] || { echo -e "${RED}Error: --binary requires a path${NC}"; exit 1; }
-            binary_path="$2"; shift 2 ;;
+        -v|--version) requested_version="${2:-}"; shift 2 ;;
+        -b|--binary) binary_path="${2:-}"; shift 2 ;;
         --no-modify-path) no_modify_path=true; shift ;;
-        *) echo -e "${ORANGE}Warning: Unknown option '$1'${NC}" >&2; shift ;;
+        *) shift ;;
     esac
 done
 
@@ -51,7 +41,7 @@ INSTALL_DIR="${GREXCODE_INSTALL_DIR:-$HOME/.grexcode/bin}"
 mkdir -p "$INSTALL_DIR"
 
 if [ -n "$binary_path" ]; then
-    [ -f "$binary_path" ] || { echo -e "${RED}Error: Binary not found: ${binary_path}${NC}"; exit 1; }
+    [ -f "$binary_path" ] || { echo -e "${RED}Binary not found: ${binary_path}${NC}"; exit 1; }
     cp "$binary_path" "$INSTALL_DIR/$APP"
     chmod 755 "$INSTALL_DIR/$APP"
     specific_version="local"
@@ -61,93 +51,71 @@ else
         Darwin*) os="darwin" ;;
         Linux*) os="linux" ;;
         MINGW*|MSYS*|CYGWIN*) os="windows" ;;
-        *) echo -e "${RED}Error: Unsupported OS: $raw_os${NC}"; exit 1 ;;
+        *) echo -e "${RED}Unsupported OS: $raw_os${NC}"; exit 1 ;;
     esac
 
     arch=$(uname -m)
     case "$arch" in
         aarch64|arm64) arch="arm64" ;;
         x86_64|amd64) arch="x64" ;;
-        armv7*|armhf) arch="armv7" ;;
-        i686|i386) arch="x86" ;;
-        *) echo -e "${RED}Error: Unsupported architecture: $arch${NC}"; exit 1 ;;
+        *) echo -e "${RED}Unsupported arch: $arch${NC}"; exit 1 ;;
     esac
 
-    [ "$os" = "darwin" ] && [ "$arch" = "x64" ] && {
+    if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
         rosetta=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
         [ "$rosetta" = "1" ] && arch="arm64"
-    }
+    fi
 
     combo="$os-$arch"
     case "$combo" in
-        linux-x64|linux-arm64|linux-armv7|darwin-x64|darwin-arm64|windows-x64) ;;
-        *) echo -e "${RED}Error: No prebuilt binary for $combo${NC}"; exit 1 ;;
+        linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64) ;;
+        *) echo -e "${RED}No binary for $combo${NC}"; exit 1 ;;
     esac
-
-    is_musl=false
-    if [ "$os" = "linux" ]; then
-        [ -f /etc/alpine-release ] && is_musl=true
-        command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl && is_musl=true
-    fi
-
-    needs_baseline=false
-    [ "$arch" = "x64" ] && [ "$os" = "linux" ] && grep -qwi avx2 /proc/cpuinfo 2>/dev/null || needs_baseline=true
-
-    target="$os-$arch"
-    [ "$needs_baseline" = "true" ] && target="$target-baseline"
-    [ "$is_musl" = "true" ] && target="$target-musl"
 
     if [ -z "$requested_version" ]; then
         echo -e "${MUTED}Fetching latest version...${NC}"
-        specific_version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | head -1 | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
-        [ -n "$specific_version" ] || { echo -e "${RED}Error: Could not fetch latest version${NC}"; exit 1; }
+        specific_version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+        [ -n "$specific_version" ] || { echo -e "${RED}Could not fetch version${NC}"; exit 1; }
     else
         specific_version="${requested_version#v}"
     fi
 
-    url="https://github.com/$REPO/releases/download/v${specific_version}/${APP}-${target}.tar.gz"
-    echo -e "${MUTED}Downloading ${APP}-${target}.tar.gz (v${specific_version})...${NC}"
+    url="https://github.com/$REPO/releases/download/v${specific_version}/${APP}-${combo}.tar.gz"
+    echo -e "${MUTED}Downloading ${APP}-${combo}.tar.gz (v${specific_version})...${NC}"
 
     tmp_dir=$(mktemp -d)
     trap "rm -rf '$tmp_dir'" EXIT
 
     if ! curl -fsSL -o "$tmp_dir/archive.tar.gz" "$url"; then
-        echo -e "${RED}Error: Download failed${NC}"
-        echo -e "${MUTED}Check: https://github.com/$REPO/releases${NC}"
-        exit 1
-    fi
-
-    if ! tar -xzf "$tmp_dir/archive.tar.gz" -C "$tmp_dir" 2>/dev/null; then
-        if ! unzip -q "$tmp_dir/archive.tar.gz" -d "$tmp_dir" 2>/dev/null; then
-            echo -e "${RED}Error: Could not extract archive${NC}"
-            exit 1
+        # Try .zip for Windows
+        url="https://github.com/$REPO/releases/download/v${specific_version}/${APP}-${combo}.zip"
+        if ! curl -fsSL -o "$tmp_dir/archive.zip" "$url"; then
+            echo -e "${RED}Download failed${NC}"; exit 1
         fi
+        unzip -q "$tmp_dir/archive.zip" -d "$tmp_dir"
+    else
+        tar -xzf "$tmp_dir/archive.tar.gz" -C "$tmp_dir"
     fi
 
     mv "$tmp_dir/$APP" "$INSTALL_DIR/"
     chmod 755 "$INSTALL_DIR/$APP"
 fi
 
-add_to_path() {
-    local config_file=$1
-    local command=$2
-    grep -Fxq "$command" "$config_file" 2>/dev/null && return
-    [[ -w $config_file ]] || return
-    echo -e "\n# grexcode" >> "$config_file"
-    echo "$command" >> "$config_file"
-    echo -e "${GREEN}Added grexcode to PATH in $config_file${NC}"
-}
-
+# Add to PATH
 if [[ "$no_modify_path" != "true" ]] && [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     current_shell=$(basename "$SHELL" 2>/dev/null || echo "bash")
     case "$current_shell" in
-        fish) config_file="$HOME/.config/fish/config.fish" ;;
-        zsh)  config_file="${ZDOTDIR:-$HOME}/.zshrc" ;;
-        *)    config_file="$HOME/.bashrc" ;;
+        fish) cfg="$HOME/.config/fish/config.fish" ;;
+        zsh)  cfg="${ZDOTDIR:-$HOME}/.zshrc" ;;
+        *)    cfg="$HOME/.bashrc" ;;
     esac
-    [ -f "$config_file" ] && add_to_path "$config_file" "export PATH=$INSTALL_DIR:\$PATH" || {
-        echo -e "${ORANGE}Add to PATH: export PATH=$INSTALL_DIR:\$PATH${NC}"
-    }
+    if [ -f "$cfg" ] && [[ -w "$cfg" ]]; then
+        grep -Fxq "export PATH=$INSTALL_DIR:\$PATH" "$cfg" 2>/dev/null || {
+            echo -e "\n# grexcode" >> "$cfg"
+            echo "export PATH=$INSTALL_DIR:\$PATH" >> "$cfg"
+            echo -e "${GREEN}Added grexcode to PATH in $cfg${NC}"
+        }
+    fi
 fi
 
 echo -e ""
