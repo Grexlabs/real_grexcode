@@ -4,20 +4,30 @@ APP=grexcode
 VERSION="1.2.1"
 
 GREEN='\033[1;32m'
+CYAN='\033[1;36m'
 MUTED='\033[0;2m'
 RED='\033[0;31m'
-CYAN='\033[0;36m'
 NC='\033[0m'
 
 REPO="grexlabs/real_grexcode"
 REPO_URL="https://github.com/$REPO"
 
+show_logo() {
+    local cols=$(tput cols 2>/dev/null || echo 80)
+    local logo=(
+        "░█▀▀░█▀▄░█▀▀░█░█░█▀▀░█▀█░█▀▄░█▀▀"
+        "░█░█░█▀▄░█▀▀░▄▀▄░█░░░█░█░█░█░█▀▀"
+        "░▀▀▀░▀░▀░▀▀▀░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀"
+    )
+    for line in "${logo[@]}"; do
+        local pad=$(( (cols - ${#line}) / 2 ))
+        printf "${GREEN}%${pad}s%s${NC}\n" "" "$line"
+    done
+}
+
 banner() {
     echo -e ""
-    echo -e "${GREEN}                    ${NC}             ${GREEN}▄${NC}     "
-    echo -e "${GREEN}█▀▀█ █▀▀█ █▀▀▀ █░█░█ ${NC}${GREEN}█▀▀▀ █▀▀█ █▀▀▄ █▀▀ ${NC}"
-    echo -e "${GREEN}█░▄▄ █▄▄▀ █▀▀░ ▀▄▀▄▀ ${NC}${GREEN}█░░░ █░░█ █░█░ █▀▀ ${NC}"
-    echo -e "${GREEN}▀▀▀▀ ▀░▀▀ ▀▀▀▀ ░▀░▀░ ${NC}${GREEN}▀▀▀▀ ▀▀▀▀ ▀▀▀░ ▀▀▀ ${NC}"
+    show_logo
     echo -e ""
 }
 
@@ -142,7 +152,7 @@ else
     chmod 755 "$INSTALL_DIR/$APP.bin"
 fi
 
-# Create logo display script
+# Create GREXCODE logo display script
 cat > "$INSTALL_DIR/$APP-logo" << 'LOGOEOF'
 #!/usr/bin/env bash
 GREEN='\033[1;32m'
@@ -153,10 +163,6 @@ logo=(
   "░▀▀▀░▀░▀░▀▀▀░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀"
 )
 cols=$(tput cols 2>/dev/null || echo 80)
-rows=$(tput lines 2>/dev/null || echo 24)
-top=$(( (rows - ${#logo[@]}) / 2 ))
-printf "\033[2J\033[H"
-for ((i=0; i<top; i++)); do echo; done
 for line in "${logo[@]}"; do
   left=$(( (cols - ${#line}) / 2 ))
   printf "${GREEN}%${left}s%s${NC}\n" "" "$line"
@@ -164,21 +170,40 @@ done
 LOGOEOF
 chmod 755 "$INSTALL_DIR/$APP-logo"
 
-# Create wrapper script with --contact support
-cat > "$INSTALL_DIR/$APP" << WRAPPER
+# Create wrapper script with logo + contact
+cat > "$INSTALL_DIR/$APP" << 'WRAPPEREOF'
 #!/usr/bin/env bash
-if [ "\$1" = "--contact" ] || [ "\$1" = "-c" ]; then
+# Show GREXCODE logo on startup (not OPENCODE)
+if [ -t 1 ] && [ -t 2 ]; then
+    GREEN='\033[1;32m'
+    NC='\033[0m'
+    cols=$(tput cols 2>/dev/null || echo 80)
+    logo=(
+      "░█▀▀░█▀▄░█▀▀░█░█░█▀▀░█▀█░█▀▄░█▀▀"
+      "░█░█░█▀▄░█▀▀░▄▀▄░█░░░█░█░█░█░█▀▀"
+      "░▀▀▀░▀░▀░▀▀▀░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀"
+    )
+    printf "\033[2J\033[H"
+    for line in "${logo[@]}"; do
+      left=$(( (cols - ${#line}) / 2 ))
+      printf "${GREEN}%${left}s%s${NC}\n" "" "$line"
+    done
+    echo ""
+fi
+
+if [ "$1" = "--contact" ] || [ "$1" = "-c" ]; then
     echo ""
     echo -e "\033[1;32m  Join Grexcode Community:\033[0m"
     echo -e "\033[36m  https://t.me/Developer_mk_group\033[0m"
     echo ""
     exit 0
 fi
-exec "\$(dirname "\$0")/$APP.bin" "\$@"
-WRAPPER
+
+exec "$(dirname "$0")/grexcode.bin" "$@"
+WRAPPEREOF
 chmod 755 "$INSTALL_DIR/$APP"
 
-# Create all aliases (skip grexcode - that's the wrapper itself)
+# Create all aliases
 for alias_name in grex Grex GREX gc GC Gc Grexcode GREXCODE; do
     ln -sf "$INSTALL_DIR/$APP" "$INSTALL_DIR/$alias_name"
 done
@@ -219,7 +244,6 @@ banner
 echo -e "${GREEN}  ✓ Grexcode v${specific_version} installed successfully!${NC}"
 echo ""
 
-# Verify installation
 if command -v grexcode >/dev/null 2>&1; then
     installed_version=$(grexcode --version 2>/dev/null || echo "$specific_version")
     echo -e "${GREEN}  ✓${NC} grexcode is ready to use"
