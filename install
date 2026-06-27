@@ -19,13 +19,8 @@ Usage: install.sh [options]
 Options:
     -h, --help              Display this help message
     -v, --version <version> Install a specific version (e.g., 0.0.1)
-    -b, --binary <path>     Install from a local binary instead of downloading
-        --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
-
-Examples:
-    curl -fsSL https://raw.githubusercontent.com/$REPO/refs/heads/main/install | bash
-    curl -fsSL https://raw.githubusercontent.com/$REPO/refs/heads/main/install | bash -s -- --version 0.0.1
-    ./install --binary /path/to/grexcode
+    -b, --binary <path>     Install from a local binary
+        --no-modify-path    Don't modify shell config files
 
 Supported platforms:
     linux-x64, linux-arm64, linux-armv7
@@ -56,7 +51,9 @@ INSTALL_DIR="${GREXCODE_INSTALL_DIR:-$HOME/.grexcode/bin}"
 mkdir -p "$INSTALL_DIR"
 
 if [ -n "$binary_path" ]; then
-    [ -f "$binary_path" ] || { echo -e "${RED}Error: Binary not found at ${binary_path}${NC}"; exit 1; }
+    [ -f "$binary_path" ] || { echo -e "${RED}Error: Binary not found: ${binary_path}${NC}"; exit 1; }
+    cp "$binary_path" "$INSTALL_DIR/$APP"
+    chmod 755 "$INSTALL_DIR/$APP"
     specific_version="local"
 else
     raw_os=$(uname -s)
@@ -76,19 +73,16 @@ else
         *) echo -e "${RED}Error: Unsupported architecture: $arch${NC}"; exit 1 ;;
     esac
 
-    if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
-        rosetta_flag=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
-        [ "$rosetta_flag" = "1" ] && arch="arm64"
-    fi
+    [ "$os" = "darwin" ] && [ "$arch" = "x64" ] && {
+        rosetta=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
+        [ "$rosetta" = "1" ] && arch="arm64"
+    }
 
     combo="$os-$arch"
     case "$combo" in
         linux-x64|linux-arm64|linux-armv7|darwin-x64|darwin-arm64|windows-x64) ;;
         *) echo -e "${RED}Error: No prebuilt binary for $combo${NC}"; exit 1 ;;
     esac
-
-    archive_ext=".tar.gz"
-    [ "$os" = "windows" ] && archive_ext=".zip"
 
     is_musl=false
     if [ "$os" = "linux" ]; then
@@ -97,98 +91,63 @@ else
     fi
 
     needs_baseline=false
-    if [ "$arch" = "x64" ] && [ "$os" = "linux" ]; then
-        grep -qwi avx2 /proc/cpuinfo 2>/dev/null || needs_baseline=true
-    fi
+    [ "$arch" = "x64" ] && [ "$os" = "linux" ] && grep -qwi avx2 /proc/cpuinfo 2>/dev/null || needs_baseline=true
 
     target="$os-$arch"
     [ "$needs_baseline" = "true" ] && target="$target-baseline"
     [ "$is_musl" = "true" ] && target="$target-musl"
 
-    filename="$APP-$target$archive_ext"
-
-    if [ "$os" = "linux" ]; then
-        command -v tar >/dev/null 2>&1 || { echo -e "${RED}Error: 'tar' is required${NC}"; exit 1; }
-    else
-        command -v unzip >/dev/null 2>&1 || { echo -e "${RED}Error: 'unzip' is required${NC}"; exit 1; }
-    fi
-
     if [ -z "$requested_version" ]; then
         echo -e "${MUTED}Fetching latest version...${NC}"
         specific_version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | head -1 | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
-        if [ -z "$specific_version" ]; then
-            echo -e "${RED}Error: Could not fetch latest version${NC}"
-            echo -e "${MUTED}Check: https://github.com/$REPO/releases${NC}"
-            exit 1
-        fi
+        [ -n "$specific_version" ] || { echo -e "${RED}Error: Could not fetch latest version${NC}"; exit 1; }
     else
-        requested_version="${requested_version#v}"
-        specific_version="$requested_version"
+        specific_version="${requested_version#v}"
     fi
 
-    url="https://github.com/$REPO/releases/download/v${specific_version}/$filename"
-    echo -e "${MUTED}Downloading $filename (v$specific_version)...${NC}"
+    url="https://github.com/$REPO/releases/download/v${specific_version}/${APP}-${target}.tar.gz"
+    echo -e "${MUTED}Downloading ${APP}-${target}.tar.gz (v${specific_version})...${NC}"
 
     tmp_dir=$(mktemp -d)
     trap "rm -rf '$tmp_dir'" EXIT
 
-    if ! curl -fsSL -w '' -o "$tmp_dir/$filename" "$url"; then
-        echo -e "${RED}Error: Failed to download $url${NC}"
-        echo -e "${MUTED}Available releases: https://github.com/$REPO/releases${NC}"
+    if ! curl -fsSL -o "$tmp_dir/archive.tar.gz" "$url"; then
+        echo -e "${RED}Error: Download failed${NC}"
+        echo -e "${MUTED}Check: https://github.com/$REPO/releases${NC}"
         exit 1
     fi
 
-    file_type=$(file -b "$tmp_dir/$filename" 2>/dev/null || echo "unknown")
-    echo -e "${MUTED}File type: $file_type${NC}"
-
-    if echo "$file_type" | grep -qi "gzip\|tar"; then
-        tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
-    elif echo "$file_type" | grep -qi "zip"; then
-        unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
-    elif echo "$file_type" | grep -qi "text\|script\|ASCII"; then
-        echo -e "${ORANGE}Warning: Downloaded file is not a binary archive.${NC}"
-        echo -e "${ORANGE}This may be a placeholder. Check https://github.com/$REPO/releases${NC}"
-        rm -rf "$tmp_dir"
-        exit 1
-    else
-        echo -e "${RED}Error: Unknown file format: $file_type${NC}"
-        rm -rf "$tmp_dir"
-        exit 1
+    if ! tar -xzf "$tmp_dir/archive.tar.gz" -C "$tmp_dir" 2>/dev/null; then
+        if ! unzip -q "$tmp_dir/archive.tar.gz" -d "$tmp_dir" 2>/dev/null; then
+            echo -e "${RED}Error: Could not extract archive${NC}"
+            exit 1
+        fi
     fi
 
     mv "$tmp_dir/$APP" "$INSTALL_DIR/"
     chmod 755 "$INSTALL_DIR/$APP"
-    rm -rf "$tmp_dir"
 fi
 
 add_to_path() {
     local config_file=$1
     local command=$2
-    if grep -Fxq "$command" "$config_file" 2>/dev/null; then
-        echo -e "${MUTED}Already in $config_file, skipping.${NC}"
-    elif [[ -w $config_file ]]; then
-        echo -e "\n# grexcode" >> "$config_file"
-        echo "$command" >> "$config_file"
-        echo -e "${GREEN}Added grexcode to PATH in $config_file${NC}"
-    fi
+    grep -Fxq "$command" "$config_file" 2>/dev/null && return
+    [[ -w $config_file ]] || return
+    echo -e "\n# grexcode" >> "$config_file"
+    echo "$command" >> "$config_file"
+    echo -e "${GREEN}Added grexcode to PATH in $config_file${NC}"
 }
 
 if [[ "$no_modify_path" != "true" ]] && [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     current_shell=$(basename "$SHELL" 2>/dev/null || echo "bash")
-    config_file=""
     case "$current_shell" in
         fish) config_file="$HOME/.config/fish/config.fish" ;;
         zsh)  config_file="${ZDOTDIR:-$HOME}/.zshrc" ;;
-        bash) config_file="$HOME/.bashrc" ;;
         *)    config_file="$HOME/.bashrc" ;;
     esac
-
-    if [[ -n "$config_file" ]]; then
-        add_to_path "$config_file" "export PATH=$INSTALL_DIR:\$PATH"
-    else
-        echo -e "${ORANGE}Add to your PATH:${NC}"
-        echo -e "  export PATH=$INSTALL_DIR:\$PATH"
-    fi
+    [ -f "$config_file" ] && add_to_path "$config_file" "export PATH=$INSTALL_DIR:\$PATH" || {
+        echo -e "${ORANGE}Add to PATH: export PATH=$INSTALL_DIR:\$PATH${NC}"
+    }
 fi
 
 echo -e ""
@@ -197,11 +156,10 @@ echo -e "${MUTED}█▀▀█ █▀▀█ █▀▀▀ █░█░█ ${NC}█
 echo -e "${MUTED}█░▄▄ █▄▄▀ █▀▀░ ▀▄▀▄▀ ${NC}█░░░ █░░█ █░█░ █▀▀ "
 echo -e "${MUTED}▀▀▀▀ ▀░▀▀ ▀▀▀▀ ░▀░▀░ ${NC}▀▀▀▀ ▀▀▀▀ ▀▀▀░ ▀▀▀ "
 echo -e ""
-echo -e "${GREEN}Grexcode v$specific_version installed!${NC}"
+echo -e "${GREEN}Grexcode v${specific_version} installed!${NC}"
 echo -e ""
 echo -e "  cd <project>  ${MUTED}# Open directory${NC}"
 echo -e "  grexcode      ${MUTED}# Run Grexcode${NC}"
 echo -e ""
 echo -e "${MUTED}Docs: ${NC}https://grexcode.ai/docs"
-echo -e "${MUTED}Releases: ${NC}https://github.com/$REPO/releases"
 echo -e ""
