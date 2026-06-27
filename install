@@ -142,6 +142,28 @@ else
     chmod 755 "$INSTALL_DIR/$APP.bin"
 fi
 
+# Create logo display script
+cat > "$INSTALL_DIR/$APP-logo" << 'LOGOEOF'
+#!/usr/bin/env bash
+GREEN='\033[1;32m'
+NC='\033[0m'
+logo=(
+  "░█▀▀░█▀▄░█▀▀░█░█░█▀▀░█▀█░█▀▄░█▀▀"
+  "░█░█░█▀▄░█▀▀░▄▀▄░█░░░█░█░█░█░█▀▀"
+  "░▀▀▀░▀░▀░▀▀▀░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀"
+)
+cols=$(tput cols 2>/dev/null || echo 80)
+rows=$(tput lines 2>/dev/null || echo 24)
+top=$(( (rows - ${#logo[@]}) / 2 ))
+printf "\033[2J\033[H"
+for ((i=0; i<top; i++)); do echo; done
+for line in "${logo[@]}"; do
+  left=$(( (cols - ${#line}) / 2 ))
+  printf "${GREEN}%${left}s%s${NC}\n" "" "$line"
+done
+LOGOEOF
+chmod 755 "$INSTALL_DIR/$APP-logo"
+
 # Create wrapper script with --contact support
 cat > "$INSTALL_DIR/$APP" << WRAPPER
 #!/usr/bin/env bash
