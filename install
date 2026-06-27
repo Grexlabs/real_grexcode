@@ -116,19 +116,16 @@ else
     tmp_dir=$(mktemp -d)
     trap "rm -rf '$tmp_dir'" EXIT
 
-    # Fancy download with progress bar, speed, ETA
-    download_file="$tmp_dir/archive.tar.gz"
     echo -ne "${YELLOW}  ⬇ Downloading${NC} ${MUTED}${APP}-${combo}.tar.gz${NC}\n"
 
-    # Use curl with progress stats
     curl -L --fail --progress-bar \
-        -o "$download_file" \
+        -o "$tmp_dir/archive.tar.gz" \
         "$url" 2>&1 || {
         url="https://github.com/$REPO/releases/download/v${specific_version}/${APP}-${combo}.zip"
         echo -ne "${YELLOW}  ⬇ Trying zip...${NC}\n"
         download_file="$tmp_dir/archive.zip"
         curl -L --fail --progress-bar \
-            -o "$download_file" \
+            -o "$tmp_dir/archive.zip" \
             "$url" 2>&1 || {
             echo -e "${RED}  ✗ Download failed${NC}"
             echo -e "${MUTED}  Check: $REPO_URL/releases${NC}"
@@ -138,10 +135,10 @@ else
 
     echo ""
     echo -ne "${YELLOW}  ⚙ Extracting...${NC} "
-    if [[ "$download_file" == *.zip ]]; then
-        unzip -q "$download_file" -d "$tmp_dir" 2>/dev/null
+    if [ -f "$tmp_dir/archive.zip" ]; then
+        unzip -q "$tmp_dir/archive.zip" -d "$tmp_dir" 2>/dev/null
     else
-        tar -xzf "$download_file" -C "$tmp_dir" 2>/dev/null
+        tar -xzf "$tmp_dir/archive.tar.gz" -C "$tmp_dir" 2>/dev/null
     fi
     echo -e "${GREEN}done${NC}"
 
@@ -171,6 +168,15 @@ fi
 # Export PATH for current session
 export PATH="$INSTALL_DIR:$PATH"
 
+# Auto-source shell config so grexcode is available immediately
+current_shell=$(basename "$SHELL" 2>/dev/null || echo "bash")
+case "$current_shell" in
+    fish) cfg="$HOME/.config/fish/config.fish" ;;
+    zsh)  cfg="${ZDOTDIR:-$HOME}/.zshrc" ;;
+    *)    cfg="$HOME/.bashrc" ;;
+esac
+[ -f "$cfg" ] && source "$cfg" 2>/dev/null || true
+
 echo ""
 banner
 echo -e "${GREEN}  ✓ Grexcode v${specific_version} installed successfully!${NC}"
@@ -187,9 +193,6 @@ fi
 
 if [ "$added_to_path" = true ]; then
     echo -e "${GREEN}  ✓${NC} Added to PATH in ${cfg}"
-    echo ""
-    echo -e "${MUTED}  To use in this session, run:${NC}"
-    echo -e "    ${CYAN}source ${cfg}${NC}"
 fi
 
 echo ""
