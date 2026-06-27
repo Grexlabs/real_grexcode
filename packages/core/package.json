@@ -13,7 +13,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "bin": {
-    "grexcode": "./bin/opencode"
+    "grexcode": "./bin/grexcode"
   },
   "exports": {
     "./public": "./src/public/index.ts",
