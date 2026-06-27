@@ -42,8 +42,8 @@ Download from [GitHub Releases](https://github.com/grexlabs/real_grexcode/releas
 ## Agents
 
 Grexcode includes two built-in agents:
-- **Build** — Default agent for coding tasks
-- **Plan** — For planning and analysis
+- **Build** -- Default agent for coding tasks
+- **Plan** -- For planning and analysis
 
 Switch between them with the `Tab` key.
 
