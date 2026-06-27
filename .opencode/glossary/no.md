@@ -2,13 +2,13 @@
 
 ## Sources
 
-- PR #10018: https://github.com/anomalyco/opencode/pull/10018
-- PR #12935: https://github.com/anomalyco/opencode/pull/12935
+- PR #10018: https://github.com/anomalyco/grexcode/pull/10018
+- PR #12935: https://github.com/anomalyco/grexcode/pull/12935
 
 ## Do Not Translate (Locale Additions)
 
-- `OpenCode` (preserve casing in prose; keep `opencode` only in commands, package names, paths, or code)
-- `OpenCode CLI`
+- `Grexcode` (preserve casing in prose; keep `grexcode` only in commands, package names, paths, or code)
+- `Grexcode CLI`
 - `CLI`, `TUI`, `MCP`, `OAuth`
 - Sound names (PR #10018 notes these were intentionally left untranslated)
 
